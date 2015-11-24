@@ -4,9 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-
-#define MAX_ARGS 10
-#define MAX_LEN  100
+#include "consts.h"
 
 int main()
 {
@@ -20,17 +18,8 @@ int main()
 		background = 0;
 		printf("$ "); 
 
-		if (fgets(input, sizeof(input), stdin) == NULL) {
-			exit(0);
-		}
+		getargs(&argc, argv);
 
-		cp = input;
-		for (argc = 0; argc < MAX_ARGS; argc++) {
-			if ((argv[argc] = strtok(cp,delim)) == NULL)
-				break;
-			cp = NULL;
-		}
-		
 		if(argc == 0) continue;
 
 		if(strcmp(argv[argc-1],"&") == 0){
@@ -41,6 +30,8 @@ int main()
 		if(strcmp(argv[0], "cd") == 0){
 			chdir(argv[1]);
 			continue;
+		} else if(strcmp(argv[0], "exit") == 0){
+			exit(0);
 		}
 
 		pid_t pid = fork();
