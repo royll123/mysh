@@ -3,22 +3,21 @@
 #include <string.h>
 #include "consts.h"
 
-void getargs(int* argc, char* argv[])
+void getargs(int* argc, char* argv[], char* p)
 {
-	char input[MAX_LEN];
-	char* cp;
-	const char *delim = " \t\n";
+	*argc = 0;
+	
+	while(1){
+		while(*p == ' ' || *p == '\t' || *p == '\n')
+			p++;
+		if(*p == '\0') break;
+	
+		argv[(*argc)++] = p;
 
-	if(fgets(input, sizeof(input), stdin) == NULL){
-		exit(0);
+		while(*p != ' ' && *p != '\t' && *p != '\n' && *p != '\0')
+			p++;
+		if(*p == '\0') break;
+		*p++ = '\0';
 	}
-	
-	cp = input;
-	
-	for(*argc = 0; *argc < MAX_ARGS; (*argc)++){
-		if((argv[*argc] = strtok(cp, delim)) == NULL){
-			break;
-		}
-		cp = NULL;
-	}
+	argv[(*argc)] = NULL;
 }

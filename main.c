@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sysexits.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include "consts.h"
@@ -12,13 +13,21 @@ int main()
 	int status;
 	int background;
 	char input[MAX_LEN], *argv[MAX_ARGS], *cp;
-	const char *delim = " \t\n";
+	enum TKN_KIND st;
 
 	while (1) {
 		background = 0;
 		printf("$ "); 
-
-		getargs(&argc, argv);
+		
+		/*if(fgets(input, sizeof(input), stdin) == NULL){
+			exit(0);
+		}*/
+		
+		st = gettoken(input, sizeof(input));
+		printf("input:%s\n", input);
+		
+		if(*input == '\0') continue;
+		getargs(&argc, argv, input);
 
 		if(argc == 0) continue;
 
@@ -36,9 +45,11 @@ int main()
 
 		pid_t pid = fork();
 		
-		if(pid == 0) {
+		if(pid < 0){
+			exit(EXIT_FAILURE);
+		} else 	if(pid == 0) {
 			execvp(argv[0], argv);
-			exit(1);
+			exit(EXIT_SUCCESS);
 		} else {
 			if(background == 0){
 				wait(&status);
