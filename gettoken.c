@@ -8,66 +8,49 @@ int gettoken(char* token, int len)
 	*token = '\0';
 	for(i = 0; i < len; i++){
 		char c = getc(stdin);
-	
-		switch(c){
-			case '|':
-				// pipe
-				if(i == 0){
+		if(i == 0){
+			switch(c){
+				case '|':
 					return (int)TKN_PIPE;
-				} else {
-					ungetc(c, stdin);
-					*token = '\0';
-					return (int)TKN_NORMAL;
-				}
-				break;
-			case '>':
-				if(i == 0){
+					break;
+				case '>':
 					return (int)TKN_REDIR_OUT;
-				} else {
-					ungetc(c, stdin);
-					*token = '\0';
-					return(int)TKN_NORMAL;
-				}
-				break;
-			case '<':
-				if(i == 0){
+					break;
+				case '<':
 					return (int)TKN_REDIR_IN;
-				} else {
-					ungetc(c, stdin);
-					*token = '\0';
-					return (int)TKN_NORMAL;
-				}
-				break;
-			case '&':
-				if(i == 0){
+					break;
+				case '&':
 					return (int)TKN_BG;
-				} else {
-					ungetc(c, stdin);
-					*token = '\0';
-					return (int)TKN_NORMAL;
-				}
-				break;
-			case '\n':
-				if(i == 0){
+					break;
+				case '\n':
 					return (int)TKN_EOL;
-				} else {
+					break;
+				case '\0':
+					return (int)TKN_EOF;
+					break;
+				case ' ':
+				case '\t':
+					break;
+				default:
+					*token++ = c;
+					break;
+			}
+		} else {
+			switch(c){
+				case '|':
+				case '>':
+				case '<':
+				case '&':
+				case '\n':
+				case '\0':
 					ungetc(c, stdin);
 					*token = '\0';
 					return (int)TKN_NORMAL;
-				}
-				break;
-			case '\0':
-				if(i == 0){
-					return (int)TKN_EOF;
-				} else {
-					ungetc(c, stdin);
-					*token = '\0';
-					return (int)TKN_EOF;
-				}
-				break;
-			default:
-				*token++ = c;
-				break;
+					break;
+				default:
+					*token++ = c;
+					break;
+			}
 		}
 	}
 }
