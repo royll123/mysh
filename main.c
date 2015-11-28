@@ -73,7 +73,7 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 		case TKN_PIPE:
 			if(io_flags & PIPE_IN){
 				// if pipe have already used, use new pipe.
-		//		pipe_out = (pipe_out+1)%2;
+				pipe_out = (pipe_out+1)%2;
 			}
 
 			if(pipe(pfd[pipe_out]) == -1){
@@ -182,7 +182,6 @@ void run_child(int argc, char* argv[])
 			perror("dup_in");
 			exit(EXIT_FAILURE);
 		}
-		close_pipe();
 	}
 
 	if(io_flags & PIPE_OUT){
@@ -191,6 +190,9 @@ void run_child(int argc, char* argv[])
 			perror("dup_out");
 			exit(EXIT_FAILURE);
 		}
+	}
+
+	if(io_flags & (PIPE_IN | PIPE_OUT)){
 		close_pipe();
 	}
 
