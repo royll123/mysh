@@ -8,6 +8,7 @@
 #define REDIR_OUT	0x2
 #define PIPE_IN		0x4
 #define PIPE_OUT	0x8
+#define BG_PROCESS	0x10
 
 enum TKN_KIND{
 	TKN_NORMAL,

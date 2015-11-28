@@ -7,26 +7,26 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include "consts.h"
 
+void set_signal();
+void set_signal_default();
 int check_state(enum TKN_KIND, enum TKN_KIND, char*);
 void run_command(int, char*[]);
 void run_child(int, char*[]);
 void post_command();
 void reset_io_flags();
+void set_foreground(int);
 
-static int background = 0;
 static int argc;
 static char *argv[MAX_ARGS];
 static char lbuf[MAX_LEN];
-static int red_in = 0;
+
 static char redin[MAX_LEN];
-static int red_out = 0;
 static char redout[MAX_LEN];
-static int use_pipe = 0;
 static int pipe_in = 0;
 static int pipe_out = 0;
-static int pipe_dir;
 static int pfd[2][2] = {-1,-1,-1,-1};
 static int io_flags = 0;
 
@@ -35,11 +35,9 @@ int main()
 	char input[MAX_LEN], *cp;
 	enum TKN_KIND st;
 
+	set_signal();
+
 	while (1) {
-		use_pipe = 0;
-		background = 0;
-		red_in = 0;
-		red_out = 0;
 		argc = 0;
 		lbuf[0] = '\0';
 		printf("$ "); 
@@ -66,6 +64,34 @@ int main()
 	}
 }
 
+void handler_finish_background(int signum)
+{
+	wait(NULL);
+}
+
+void set_signal()
+{
+	struct sigaction sa_sigign;
+	sa_sigign.sa_handler = SIG_IGN;
+	
+	struct sigaction sa_catch_bg;
+	sa_catch_bg.sa_handler = &handler_finish_background;
+	sa_catch_bg.sa_flags = SA_RESTART;
+
+//	sigaction(SIGINT, &sa_sigign, NULL);
+	sigaction(SIGTTOU, &sa_sigign, NULL);
+	sigaction(SIGCHLD, &sa_catch_bg, NULL);
+}
+
+void set_signal_default()
+{
+	struct sigaction sa_default;
+	sa_default.sa_handler = SIG_DFL;
+
+	sigaction(SIGTTOU, &sa_default, NULL);
+	sigaction(SIGCHLD, &sa_default, NULL);
+}
+
 int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 {
 	int rt = 0;
@@ -80,21 +106,18 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 				perror("pipe");
 				exit(EXIT_FAILURE);
 			}
-			use_pipe = 1;
-			pipe_dir = 1;
+
 			io_flags |= PIPE_OUT;
 			rt = 1;
 			break;
 		case TKN_BG:
 			// background
-			background = 1;
+			io_flags |= BG_PROCESS;
 			break;
 		case TKN_REDIR_IN:
-			red_in = 1;
 			io_flags |= REDIR_IN;
 			break;
 		case TKN_REDIR_OUT:
-			red_out = 1;
 			io_flags |= REDIR_OUT;
 			break;
 		case TKN_EOF:
@@ -132,10 +155,17 @@ void run_command(int argc, char* argv[])
 		if(pid < 0){
 			exit(EXIT_FAILURE);	
 		} else  if(pid == 0) {
+			set_signal_default();
 			run_child(argc, argv);
 		} else {
-			if(background == 0){
+			if(io_flags & BG_PROCESS){
+				pid_t pgid = getpgid(getppid());
+				setpgid(pid, pgid);
+			} else {
+				setpgid(pid, 0);
+				set_foreground(pid);
 				wait(&status);
+				set_foreground((int)getpgid(getpid()));
 			}
 		}
 	}
@@ -204,9 +234,6 @@ void post_command()
 {
 	if(io_flags & PIPE_IN){
 		io_flags &= ~PIPE_IN;
-		if(io_flags & PIPE_OUT == 0){
-		//	close(pfd[0][0]);
-		}
 		close(pfd[pipe_in][0]);
 	}
 
@@ -225,4 +252,14 @@ void reset_io_flags()
 	// except pipe flags
 	io_flags &= ~REDIR_IN;
 	io_flags &= ~REDIR_OUT;
+	io_flags &= ~BG_PROCESS;
+}
+
+void set_foreground(int pgid)
+{
+	int fd = open("/dev/tty", O_RDWR);
+	if(tcsetpgrp(fd, pgid) < 0){
+		perror("tcsetpgrp");
+		exit(EXIT_FAILURE);
+	}
 }
