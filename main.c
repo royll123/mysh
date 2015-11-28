@@ -6,10 +6,14 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <errno.h>
 #include "consts.h"
 
 int check_state(enum TKN_KIND, enum TKN_KIND, char*);
 void run_command(int, char*[]);
+void run_child(int, char*[]);
+void post_command();
+void reset_io_flags();
 
 static int background = 0;
 static int argc;
@@ -20,8 +24,11 @@ static char redin[MAX_LEN];
 static int red_out = 0;
 static char redout[MAX_LEN];
 static int use_pipe = 0;
-static int pipe_num;
-static int pfd[2];
+static int pipe_in = 0;
+static int pipe_out = 0;
+static int pipe_dir;
+static int pfd[2][2] = {-1,-1,-1,-1};
+static int io_flags = 0;
 
 int main()
 {
@@ -44,6 +51,7 @@ int main()
 			if(check_state(st, last, input) == 1){
 				if(argc != 0){
 					run_command(argc, argv);
+					post_command();
 				}
 			}
 			
@@ -63,12 +71,18 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 	int rt = 0;
 	switch(st){
 		case TKN_PIPE:
-			if(pipe(pfd) == -1){
+			if(io_flags & PIPE_IN){
+				// if pipe have already used, use new pipe.
+		//		pipe_out = (pipe_out+1)%2;
+			}
+
+			if(pipe(pfd[pipe_out]) == -1){
 				perror("pipe");
 				exit(EXIT_FAILURE);
 			}
 			use_pipe = 1;
-			pipe_num = 1;
+			pipe_dir = 1;
+			io_flags |= PIPE_OUT;
 			rt = 1;
 			break;
 		case TKN_BG:
@@ -77,9 +91,11 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 			break;
 		case TKN_REDIR_IN:
 			red_in = 1;
+			io_flags |= REDIR_IN;
 			break;
 		case TKN_REDIR_OUT:
 			red_out = 1;
+			io_flags |= REDIR_OUT;
 			break;
 		case TKN_EOF:
 		case TKN_EOL:
@@ -116,44 +132,95 @@ void run_command(int argc, char* argv[])
 		if(pid < 0){
 			exit(EXIT_FAILURE);	
 		} else  if(pid == 0) {
-			if(red_out){
-				int fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-				close(1);
-				dup(fd);
-				close(fd);
-			}
-			if(red_in){
-				int fd = open(redin, O_RDONLY);
-				close(0);
-				dup(fd);
-				close(fd);
-			}
-			if(use_pipe){
-				close(pipe_num);
-				if(dup(pfd[pipe_num]) < 0){
-					perror("dup");
-					exit(EXIT_FAILURE);
-				}
-				close(pfd[0]);
-				close(pfd[1]);
-			}
-			execvp(argv[0], argv);
-			
-			exit(EXIT_SUCCESS);
+			run_child(argc, argv);
 		} else {
 			if(background == 0){
 				wait(&status);
 			}
 		}
+	}
+}
 
-		if(use_pipe){
-			if(pipe_num == 0){
-				use_pipe = 0;
-				close(pfd[0]);
-			} else {
-				pipe_num = 0;
-				close(pfd[1]);
+int is_fd_valid(int fd)
+{
+	return fcntl(fd, F_GETFD) != -1 | errno != EBADF;
+}
+
+void close_pipe()
+{
+	int i, j;
+	for(i = 0; i < 2; i++){
+		for(j = 0; j < 2; j++){
+			if(is_fd_valid(pfd[i][j]) == 0) continue;
+			if(close(pfd[i][j]) < 0){
+				perror("close");
+				exit(EXIT_FAILURE);
 			}
 		}
 	}
+}
+
+void run_child(int argc, char* argv[])
+{
+	if(io_flags & REDIR_OUT){
+		int fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+		close(1);
+		dup(fd);
+		close(fd);
+	}
+
+	if(io_flags & REDIR_IN){
+		int fd = open(redin, O_RDONLY);
+		close(0);
+		dup(fd);
+		close(fd);
+	}
+
+	if(io_flags & PIPE_IN){
+		close(0);
+		if(dup(pfd[pipe_in][0]) < 0){
+			perror("dup_in");
+			exit(EXIT_FAILURE);
+		}
+		close_pipe();
+	}
+
+	if(io_flags & PIPE_OUT){
+		close(1);
+		if(dup(pfd[pipe_out][1]) < 0){
+			perror("dup_out");
+			exit(EXIT_FAILURE);
+		}
+		close_pipe();
+	}
+
+	execvp(argv[0], argv);
+	exit(EXIT_SUCCESS);
+}
+
+void post_command()
+{
+	if(io_flags & PIPE_IN){
+		io_flags &= ~PIPE_IN;
+		if(io_flags & PIPE_OUT == 0){
+		//	close(pfd[0][0]);
+		}
+		close(pfd[pipe_in][0]);
+	}
+
+	if(io_flags & PIPE_OUT){
+		io_flags &= ~PIPE_OUT;
+		io_flags |= PIPE_IN;
+		close(pfd[pipe_out][1]);
+		pipe_in = pipe_out;
+	}
+
+	reset_io_flags();
+}
+
+void reset_io_flags()
+{
+	// except pipe flags
+	io_flags &= ~REDIR_IN;
+	io_flags &= ~REDIR_OUT;
 }
