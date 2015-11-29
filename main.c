@@ -10,6 +10,13 @@
 #include <signal.h>
 #include "consts.h"
 
+#define TRY(x, y) do { \
+				if((x) < 0) { \
+					perror((y)); \
+					exit(EXIT_FAILURE); \
+				} \
+			} while(0)
+
 void set_signal();
 void set_signal_default();
 int check_state(enum TKN_KIND, enum TKN_KIND, char*);
@@ -61,10 +68,10 @@ int main()
 
 void handler_finish_background(int signum, siginfo_t* info, void* ctx)
 {
-	int fd = open("/dev/tty", O_RDWR);
+	int fd, status;
+	TRY((fd = open("/dev/tty", O_RDWR)), "open");
 	if(info->si_pid != tcgetpgrp(fd)){
-		wait(NULL);
-		fprintf(stderr, "terminated background\n");
+		TRY((wait(&status)), "wait");
 	}
 }
 
@@ -77,9 +84,9 @@ void set_signal()
 	sa_catch_bg.sa_sigaction = &handler_finish_background;
 	sa_catch_bg.sa_flags = SA_SIGINFO | SA_RESTART;
 
-	sigaction(SIGINT, &sa_sigign, NULL);
-	sigaction(SIGTTOU, &sa_sigign, NULL);
-	sigaction(SIGCHLD, &sa_catch_bg, NULL);
+	TRY((sigaction(SIGINT, &sa_sigign, NULL)), "sigaction");
+	TRY((sigaction(SIGTTOU, &sa_sigign, NULL)), "sigaction");
+	TRY((sigaction(SIGCHLD, &sa_catch_bg, NULL)), "sigaction");
 }
 
 void set_signal_default()
@@ -87,9 +94,9 @@ void set_signal_default()
 	struct sigaction sa_default;
 	sa_default.sa_handler = SIG_DFL;
 	
-	sigaction(SIGINT, &sa_default, NULL);
-	sigaction(SIGTTOU, &sa_default, NULL);
-	sigaction(SIGCHLD, &sa_default, NULL);
+	TRY((sigaction(SIGINT, &sa_default, NULL)), "sigaction");
+	TRY((sigaction(SIGTTOU, &sa_default, NULL)), "sigaction");
+	TRY((sigaction(SIGCHLD, &sa_default, NULL)), "sigactioN");
 }
 
 int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
@@ -98,14 +105,11 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 	switch(st){
 		case TKN_PIPE:
 			if(io_flags & PIPE_IN){
-				// if pipe have already used, use new pipe.
+				// if a pipe has already used, use new pipe.
 				pipe_out = (pipe_out+1)%2;
 			}
 
-			if(pipe(pfd[pipe_out]) == -1){
-				perror("pipe");
-				exit(EXIT_FAILURE);
-			}
+			TRY((pipe(pfd[pipe_out])), "pipe");
 
 			io_flags |= PIPE_OUT;
 			rt = 1;
@@ -143,23 +147,23 @@ void run_command(int argc, char* argv[])
 {
 	int status;
 	if(strcmp(argv[0], "cd") == 0){
-		chdir(argv[1]);
+		TRY(chdir(argv[1]), "cd");
 	} else if(strcmp(argv[0], "exit") == 0){
-		exit(0);
+		exit(EXIT_SUCCESS);
 	} else {
 		pid_t pid = fork();
 
 		if(pid < 0){
+			perror("fork");
 			exit(EXIT_FAILURE);	
 		} else  if(pid == 0) {
 			set_signal_default();
 			run_child(argc, argv);
 		} else {
-			setpgid(pid, 0);
+			TRY((setpgid(pid, 0)), "setpgid");
 			if((io_flags & BG_PROCESS) == 0){
-				setpgid(pid, 0);
 				set_foreground(pid);
-				wait(&status);
+				TRY(wait(&status), "wait");
 				set_foreground((int)getpgid(getpid()));
 			}
 		}
@@ -177,10 +181,7 @@ void close_pipe()
 	for(i = 0; i < 2; i++){
 		for(j = 0; j < 2; j++){
 			if(is_fd_valid(pfd[i][j]) == 0) continue;
-			if(close(pfd[i][j]) < 0){
-				perror("close");
-				exit(EXIT_FAILURE);
-			}
+			TRY(close(pfd[i][j]), "close");
 		}
 	}
 }
@@ -189,49 +190,35 @@ void run_child(int argc, char* argv[])
 {
 	if(io_flags & REDIR_OUT){
 		int fd;
-		if((fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644)) < 0){
-			fprintf(stderr, "redout:%s\n", redout);
-			perror("open");
-			exit(EXIT_FAILURE);
-		}
-		close(1);
-		dup(fd);
-		close(fd);
+		TRY((fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644)), "open");
+		TRY(close(1), "close");
+		TRY(dup(fd), "dup");
+		TRY(close(fd), "close");
 	}
 
 	if(io_flags & REDIR_IN){
 		int fd;
-		if((fd = open(redin, O_RDONLY)) < 0){
-			fprintf(stderr, "redin:%s\n", redin);
-			perror("open");
-			exit(EXIT_FAILURE);
-		}
-		close(0);
-		dup(fd);
-		close(fd);
+		TRY((fd = open(redin, O_RDONLY)), "open");
+		TRY(close(0), "close");
+		TRY(dup(fd), "dup");
+		TRY(close(fd), "close");
 	}
 
 	if(io_flags & PIPE_IN){
-		close(0);
-		if(dup(pfd[pipe_in][0]) < 0){
-			perror("dup_in");
-			exit(EXIT_FAILURE);
-		}
+		TRY(close(0), "close");
+		TRY(dup(pfd[pipe_in][0]), "dup");
 	}
 
 	if(io_flags & PIPE_OUT){
-		close(1);
-		if(dup(pfd[pipe_out][1]) < 0){
-			perror("dup_out");
-			exit(EXIT_FAILURE);
-		}
+		TRY(close(1), "close");
+		TRY(dup(pfd[pipe_out][1]), "dup");
 	}
 
 	if(io_flags & (PIPE_IN | PIPE_OUT)){
 		close_pipe();
 	}
 
-	execvp(argv[0], argv);
+	TRY((execvp(argv[0], argv)), "execvp");
 	exit(EXIT_SUCCESS);
 }
 
@@ -239,13 +226,13 @@ void post_command()
 {
 	if(io_flags & PIPE_IN){
 		io_flags &= ~PIPE_IN;
-		close(pfd[pipe_in][0]);
+		TRY(close(pfd[pipe_in][0]), "close");
 	}
 
 	if(io_flags & PIPE_OUT){
 		io_flags &= ~PIPE_OUT;
 		io_flags |= PIPE_IN;
-		close(pfd[pipe_out][1]);
+		TRY(close(pfd[pipe_out][1]), "close");
 		pipe_in = pipe_out;
 	}
 
@@ -265,9 +252,7 @@ void reset_io_flags()
 
 void set_foreground(int pgid)
 {
-	int fd = open("/dev/tty", O_RDWR);
-	if(tcsetpgrp(fd, pgid) < 0){
-		perror("tcsetpgrp");
-		exit(EXIT_FAILURE);
-	}
+	int fd;
+	TRY((fd = open("/dev/tty", O_RDWR)), "open");
+	TRY((tcsetpgrp(fd, pgid)), "tcsetpgrp");
 }
