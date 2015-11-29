@@ -35,6 +35,8 @@ static char redout[MAX_LEN];
 static int pipe_in = 0;
 static int pipe_out = 0;
 static int pfd[2][2] = {-1,-1,-1,-1};
+static int pipe_pgid = 0;
+
 static int io_flags = 0;
 
 int main()
@@ -147,7 +149,9 @@ void run_command(int argc, char* argv[])
 {
 	int status;
 	if(strcmp(argv[0], "cd") == 0){
-		TRY(chdir(argv[1]), "cd");
+		if(chdir(argv[1]) < 0){
+			perror("cd");
+		}
 	} else if(strcmp(argv[0], "exit") == 0){
 		exit(EXIT_SUCCESS);
 	} else {
@@ -160,11 +164,22 @@ void run_command(int argc, char* argv[])
 			set_signal_default();
 			run_child(argc, argv);
 		} else {
-			TRY((setpgid(pid, 0)), "setpgid");
+			int pgid = pid;
+			if(io_flags & (PIPE_IN | PIPE_OUT) && pipe_pgid != 0){
+				TRY((setpgid(pid, pipe_pgid)), "setpgid");
+				pgid = pid;
+			} else {
+				TRY((setpgid(pid, 0)), "setpgid");
+				if(io_flags & (PIPE_IN | PIPE_OUT)){
+					pipe_pgid = pid;
+				}
+			}
 			if((io_flags & BG_PROCESS) == 0){
-				set_foreground(pid);
-				TRY(wait(&status), "wait");
-				set_foreground((int)getpgid(getpid()));
+				set_foreground(pgid);
+				if((io_flags & PIPE_OUT) == 0){
+					TRY(wait(&status), "wait");
+					set_foreground((int)getpgid(getpid()));
+				}
 			}
 		}
 	}
@@ -227,6 +242,9 @@ void post_command()
 	if(io_flags & PIPE_IN){
 		io_flags &= ~PIPE_IN;
 		TRY(close(pfd[pipe_in][0]), "close");
+		if((io_flags & PIPE_OUT) == 0){
+			pipe_pgid = 0;
+		}
 	}
 
 	if(io_flags & PIPE_OUT){
