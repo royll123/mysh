@@ -64,9 +64,12 @@ int main()
 	}
 }
 
-void handler_finish_background(int signum)
+void handler_finish_background(int signum, siginfo_t* info, void* ctx)
 {
-	wait(NULL);
+	int fd = open("/dev/tty", O_RDWR);
+	if(info->si_pid != tcgetpgrp(fd)){
+		wait(NULL);
+	}
 }
 
 void set_signal()
@@ -75,10 +78,10 @@ void set_signal()
 	sa_sigign.sa_handler = SIG_IGN;
 	
 	struct sigaction sa_catch_bg;
-	sa_catch_bg.sa_handler = &handler_finish_background;
-	sa_catch_bg.sa_flags = SA_RESTART;
+	sa_catch_bg.sa_sigaction = &handler_finish_background;
+	sa_catch_bg.sa_flags = SA_SIGINFO;
 
-//	sigaction(SIGINT, &sa_sigign, NULL);
+	sigaction(SIGINT, &sa_sigign, NULL);
 	sigaction(SIGTTOU, &sa_sigign, NULL);
 	sigaction(SIGCHLD, &sa_catch_bg, NULL);
 }
@@ -87,7 +90,8 @@ void set_signal_default()
 {
 	struct sigaction sa_default;
 	sa_default.sa_handler = SIG_DFL;
-
+	
+	sigaction(SIGINT, &sa_default, NULL);
 	sigaction(SIGTTOU, &sa_default, NULL);
 	sigaction(SIGCHLD, &sa_default, NULL);
 }
@@ -159,8 +163,8 @@ void run_command(int argc, char* argv[])
 			run_child(argc, argv);
 		} else {
 			if(io_flags & BG_PROCESS){
-				pid_t pgid = getpgid(getppid());
-				setpgid(pid, pgid);
+			//	pid_t pgid = getpgid(getppid());
+				setpgid(pid, 0);
 			} else {
 				setpgid(pid, 0);
 				set_foreground(pid);
