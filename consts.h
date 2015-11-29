@@ -21,5 +21,6 @@ enum TKN_KIND{
 };
 
 void getargs(int*, char*[], char*);
+char* trimspaces(char*);
 int gettoken(char*, int);
 #endif

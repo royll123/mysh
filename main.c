@@ -38,8 +38,6 @@ int main()
 	set_signal();
 
 	while (1) {
-		argc = 0;
-		lbuf[0] = '\0';
 		printf("$ "); 
 		enum TKN_KIND last = TKN_NORMAL;
 
@@ -52,14 +50,11 @@ int main()
 					post_command();
 				}
 			}
-			
-			last = st;
-			if(st == TKN_PIPE){
-				argc = 0;
-				lbuf[0] = '\0';
-			} else if(st == TKN_EOL){
+			if(st == TKN_EOL){
 				break;
 			}
+
+			last = st;
 		}
 	}
 }
@@ -69,6 +64,7 @@ void handler_finish_background(int signum, siginfo_t* info, void* ctx)
 	int fd = open("/dev/tty", O_RDWR);
 	if(info->si_pid != tcgetpgrp(fd)){
 		wait(NULL);
+		fprintf(stderr, "terminated background\n");
 	}
 }
 
@@ -79,7 +75,7 @@ void set_signal()
 	
 	struct sigaction sa_catch_bg;
 	sa_catch_bg.sa_sigaction = &handler_finish_background;
-	sa_catch_bg.sa_flags = SA_SIGINFO;
+	sa_catch_bg.sa_flags = SA_SIGINFO | SA_RESTART;
 
 	sigaction(SIGINT, &sa_sigign, NULL);
 	sigaction(SIGTTOU, &sa_sigign, NULL);
@@ -129,13 +125,10 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 			rt = 1;
 			break;
 		default:
-			if(last == TKN_PIPE){
-				
-			}
 			if(last == TKN_REDIR_OUT){
-				strncpy(redout, input, MAX_LEN);
+				strncpy(redout, trimspaces(input), MAX_LEN);
 			} else if(last == TKN_REDIR_IN){
-				strncpy(redin, input, MAX_LEN);
+				strncpy(redin, trimspaces(input), MAX_LEN);
 			} else {
 				strncpy(lbuf, input, MAX_LEN);
 				getargs(&argc, argv, lbuf);
@@ -162,10 +155,8 @@ void run_command(int argc, char* argv[])
 			set_signal_default();
 			run_child(argc, argv);
 		} else {
-			if(io_flags & BG_PROCESS){
-			//	pid_t pgid = getpgid(getppid());
-				setpgid(pid, 0);
-			} else {
+			setpgid(pid, 0);
+			if((io_flags & BG_PROCESS) == 0){
 				setpgid(pid, 0);
 				set_foreground(pid);
 				wait(&status);
@@ -197,14 +188,24 @@ void close_pipe()
 void run_child(int argc, char* argv[])
 {
 	if(io_flags & REDIR_OUT){
-		int fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+		int fd;
+		if((fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644)) < 0){
+			fprintf(stderr, "redout:%s\n", redout);
+			perror("open");
+			exit(EXIT_FAILURE);
+		}
 		close(1);
 		dup(fd);
 		close(fd);
 	}
 
 	if(io_flags & REDIR_IN){
-		int fd = open(redin, O_RDONLY);
+		int fd;
+		if((fd = open(redin, O_RDONLY)) < 0){
+			fprintf(stderr, "redin:%s\n", redin);
+			perror("open");
+			exit(EXIT_FAILURE);
+		}
 		close(0);
 		dup(fd);
 		close(fd);
@@ -247,6 +248,9 @@ void post_command()
 		close(pfd[pipe_out][1]);
 		pipe_in = pipe_out;
 	}
+
+	argc = 0;
+	lbuf[0] = '\0';
 
 	reset_io_flags();
 }
