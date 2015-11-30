@@ -1,5 +1,5 @@
 all:
-	gcc main.c getargs.c gettoken.c -o mysh
+	gcc main.c getargs.c gettoken.c getpath.c -o mysh
 
 clean:
 	rm -f mysh

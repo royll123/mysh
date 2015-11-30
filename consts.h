@@ -1,8 +1,9 @@
 #ifndef CONSTS
 #define CONSTS
 
-#define MAX_ARGS 256
-#define MAX_LEN 256
+#define MAX_ARGS 		256
+#define MAX_LEN 		256
+#define MAX_PATH_LEN	256
 
 #define REDIR_IN	0x1
 #define REDIR_OUT	0x2
@@ -23,4 +24,5 @@ enum TKN_KIND{
 void getargs(int*, char*[], char*);
 char* trimspaces(char*);
 int gettoken(char*, int);
+char* getpath(char**, char*, char*);
 #endif

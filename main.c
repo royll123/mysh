@@ -20,8 +20,8 @@
 void set_signal();
 void set_signal_default();
 int check_state(enum TKN_KIND, enum TKN_KIND, char*);
-void run_command(int, char*[]);
-void run_child(int, char*[]);
+void run_command(int, char*[], char*[]);
+void run_child(int, char*[], char*[]);
 void post_command();
 void reset_io_flags();
 void set_foreground(int);
@@ -39,7 +39,7 @@ static int pipe_pgid = 0;
 
 static int io_flags = 0;
 
-int main()
+int main(int ac, char* av[], char* envp[])
 {
 	char input[MAX_LEN], *cp;
 	enum TKN_KIND st;
@@ -55,7 +55,7 @@ int main()
 			
 			if(check_state(st, last, input) == 1){
 				if(argc != 0){
-					run_command(argc, argv);
+					run_command(argc, argv, envp);
 					post_command();
 				}
 			}
@@ -145,7 +145,7 @@ int check_state(enum TKN_KIND st, enum TKN_KIND last, char* input)
 	return rt;
 }
 
-void run_command(int argc, char* argv[])
+void run_command(int argc, char* argv[], char* envp[])
 {
 	int status;
 	if(strcmp(argv[0], "cd") == 0){
@@ -162,7 +162,7 @@ void run_command(int argc, char* argv[])
 			exit(EXIT_FAILURE);	
 		} else  if(pid == 0) {
 			set_signal_default();
-			run_child(argc, argv);
+			run_child(argc, argv, envp);
 		} else {
 			int pgid = pid;
 			if(io_flags & (PIPE_IN | PIPE_OUT) && pipe_pgid != 0){
@@ -201,8 +201,15 @@ void close_pipe()
 	}
 }
 
-void run_child(int argc, char* argv[])
+void run_child(int argc, char* argv[], char* envp[])
 {
+	char path[MAX_PATH_LEN];
+	getpath(envp, argv[0], path);
+	if(*path == '\0'){
+		fprintf(stderr, "mysh: %s command is not found\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}
+	
 	if(io_flags & REDIR_OUT){
 		int fd;
 		TRY((fd = open(redout, O_WRONLY|O_CREAT|O_TRUNC, 0644)), "open");
@@ -233,7 +240,8 @@ void run_child(int argc, char* argv[])
 		close_pipe();
 	}
 
-	TRY((execvp(argv[0], argv)), "execvp");
+//	TRY((execvp(argv[0], argv)), "execvp");
+	TRY((execve(path, argv, envp)), "execve");
 	exit(EXIT_SUCCESS);
 }
 
